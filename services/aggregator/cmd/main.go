@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dynamotypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -82,6 +83,8 @@ func main() {
 	dbClient := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
 		o.BaseEndpoint = aws.String(dynamoEndpoint)
 	})
+
+	waitForQueue(ctx, sqsClient, queueURL)
 
 	go consumeQueue(ctx, sqsClient, dbClient, queueURL)
 
@@ -243,6 +246,25 @@ func saveSummary(ctx context.Context, db *dynamodb.Client, summary Summary) {
 	})
 	if err != nil {
 		log.WithError(err).Error("failed to save summary")
+	}
+}
+
+func waitForQueue(ctx context.Context, client *sqs.Client, queueURL string) {
+	for {
+		_, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+			QueueUrl:       aws.String(queueURL),
+			AttributeNames: []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameAll},
+		})
+		if err == nil {
+			log.WithField("queue", queueURL).Info("queue is ready")
+			return
+		}
+		log.WithField("queue", queueURL).Info("waiting for queue to be created...")
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 
