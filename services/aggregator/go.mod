@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.14.9
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.34.3
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.34.3
+	github.com/sirupsen/logrus v1.9.4
 )
 
 require (
@@ -25,4 +26,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3 // indirect
 	github.com/aws/smithy-go v1.20.3 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 )

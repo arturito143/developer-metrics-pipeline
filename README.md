@@ -4,55 +4,39 @@ Pipeline de processamento assíncrono de métricas de desenvolvedores utilizando
 
 ---
 
-# Arquitetura
+## Arquitetura
 
 ```txt
-[SQS: raw-events]
-        ↓
-[Processor Service]
-        ↓
-[SQS: processed-events]
-        ↓
-[Aggregator Service]
-        ↓
-[DynamoDB]
-        ↓
-[REST API]
+[SQS: raw-events] → [Processor Service] → [SQS: processed-events] → [Aggregator Service] → [DynamoDB] → [REST API]
 ```
 
 ---
 
-# Objetivo
+## Tecnologias
 
-O sistema recebe eventos de métricas de desenvolvedores através de filas SQS, processa os dados, agrega informações e disponibiliza uma API REST para consulta.
-
-O projeto foi desenvolvido utilizando arquitetura orientada a eventos e comunicação assíncrona entre serviços.
-
----
-
-# Tecnologias Utilizadas
-
-- Golang 1.23
-- Docker
-- Docker Compose
+- Go 1.23
+- Docker / Docker Compose
 - AWS SDK Go v2
-- LocalStack
-- Amazon SQS
-- DynamoDB
+- LocalStack (SQS + DynamoDB)
+- Logrus (logs JSON estruturados)
 
 ---
 
-# Estrutura do Projeto
+## Estrutura do Projeto
 
 ```txt
 services/
  ├── processor/
  │    ├── cmd/
+ │    │    ├── main.go
+ │    │    └── main_test.go
  │    ├── go.mod
  │    └── Dockerfile
  │
  └── aggregator/
       ├── cmd/
+      │    ├── main.go
+      │    └── main_test.go
       ├── go.mod
       └── Dockerfile
 
@@ -69,284 +53,208 @@ README.md
 
 ---
 
-# Componentes
-
-## Processor
-
-Responsável por:
-
-- consumir mensagens da fila `raw-events`
-- validar eventos
-- enriquecer mensagens
-- publicar na fila `processed-events`
-
----
-
-## Aggregator
-
-Responsável por:
-
-- consumir mensagens da fila `processed-events`
-- agregar métricas por desenvolvedor
-- persistir eventos no DynamoDB
-- expor API REST
-
----
-
-# Filas SQS
+## Filas SQS
 
 | Fila | Função |
 |---|---|
 | raw-events | Entrada de eventos brutos |
-| processed-events | Eventos processados pelo Processor |
-| raw-events-dlq | Dead Letter Queue da raw-events |
-| processed-events-dlq | Dead Letter Queue da processed-events |
+| processed-events | Eventos validados pelo Processor |
+| raw-events-dlq | Dead Letter Queue da raw-events (maxReceiveCount: 3) |
+| processed-events-dlq | Dead Letter Queue da processed-events (maxReceiveCount: 3) |
 
 ---
 
-# Estrutura dos Eventos
+## Tabelas DynamoDB
 
-## Evento recebido
-
-```json
-{
-  "event_id": "uuid-v4",
-  "developer_id": "dev-123",
-  "metric_type": "commits",
-  "value": 15,
-  "repository": "org/repo-name",
-  "timestamp": "2026-04-15T10:30:00Z"
-}
-```
+| Tabela | Partition Key | Função |
+|---|---|---|
+| events | event_id (S) | Armazena todos os eventos processados |
+| developer_summary | developer_id (S) | Métricas agregadas por desenvolvedor |
 
 ---
 
-## Evento processado
+## Variáveis de Ambiente
 
-```json
-{
-  "event_id": "uuid-v4",
-  "developer_id": "dev-123",
-  "metric_type": "commits",
-  "value": 15,
-  "repository": "org/repo-name",
-  "timestamp": "2026-04-15T10:30:00Z",
-  "processed_at": "2026-04-15T10:30:05Z",
-  "processor_id": "processor-1"
-}
-```
+### Processor
 
----
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `WORKER_COUNT` | `5` | Número de workers no pool |
+| `SQS_ENDPOINT` | `http://localstack:4566` | Endpoint do SQS |
+| `RAW_QUEUE_URL` | `http://localstack:4566/000000000000/raw-events` | URL da fila de entrada |
+| `PROCESSED_QUEUE_URL` | `http://localstack:4566/000000000000/processed-events` | URL da fila de saída |
+| `AWS_REGION` | `us-east-1` | Região AWS |
 
-# Validações Implementadas
+### Aggregator
 
-O Processor valida:
-
-- `event_id` obrigatório
-- `developer_id` obrigatório
-- `metric_type` válido:
-  - commits
-  - pull_requests
-  - review_time_minutes
-- `value >= 0`
-- `review_time_minutes <= 1440`
-- timestamp não pode ser futuro
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `SQS_ENDPOINT` | `http://localstack:4566` | Endpoint do SQS |
+| `DYNAMODB_ENDPOINT` | `http://localstack:4566` | Endpoint do DynamoDB |
+| `PROCESSED_QUEUE_URL` | `http://localstack:4566/000000000000/processed-events` | URL da fila de entrada |
+| `AWS_REGION` | `us-east-1` | Região AWS |
 
 ---
 
-# DynamoDB
+## Como Executar
 
-## Tabela `events`
-
-Armazena todos os eventos processados individualmente.
-
----
-
-## Tabela `developer_summary`
-
-Armazena métricas agregadas por desenvolvedor.
-
----
-
-# API REST
-
-## Health Check
-
-```http
-GET /health
-```
-
-### Resposta
-
-```json
-{
-  "status": "ok"
-}
-```
-
----
-
-## Summary
-
-```http
-GET /metrics/dev-1/summary
-```
-
-### Resposta
-
-```json
-{
-  "developer_id":"dev-1",
-  "total_commits":210,
-  "total_pull_requests":0,
-  "avg_review_time_minutes":0,
-  "events_processed":20
-}
-```
-
----
-
-# Como Executar
-
-## Pré-requisitos
-
-Instalar:
+### Pré-requisitos
 
 - Docker Desktop
-- Go 1.23+
+- Go 1.23+ (para rodar testes localmente)
 
----
-
-# Instalar dependências
-
-## Processor
-
-```bash
-cd services/processor
-go mod tidy
-```
-
----
-
-## Aggregator
-
-```bash
-cd services/aggregator
-go mod tidy
-```
-
----
-
-# Subir ambiente
-
-Na raiz do projeto:
+### Subir o ambiente
 
 ```bash
 docker compose up --build
 ```
 
----
+O LocalStack possui healthcheck configurado — os serviços Processor e Aggregator só iniciam após o LocalStack estar pronto.
 
-# Verificar containers
+### Verificar containers
 
 ```bash
 docker ps
 ```
 
-Containers esperados:
-
-- localstack
-- processor
-- aggregator
+Containers esperados: `localstack`, `processor`, `aggregator`.
 
 ---
 
-# Popular fila com eventos
+## Seed (popular fila com eventos)
 
-Executar:
+Após subir o ambiente:
 
 ```bash
 bash scripts/seed.sh
 ```
 
+O script envia:
+- 20 mensagens válidas com diferentes developers e metric_types
+- 4 mensagens inválidas (event_id vazio, event_id não-UUID, metric_type inválido, timestamp futuro)
+- 2 mensagens duplicadas (mesmo event_id) para testar idempotência
+
 ---
 
-# Testar API
+## API REST
 
-## Health
+### Health Check
 
-```txt
-http://localhost:8080/health
+```bash
+curl http://localhost:8080/health
+```
+
+Resposta (verifica conexão com SQS e DynamoDB):
+
+```json
+{
+  "status": "ok",
+  "details": {
+    "sqs": "connected",
+    "dynamodb": "connected"
+  }
+}
+```
+
+### Summary de um desenvolvedor
+
+```bash
+curl http://localhost:8080/metrics/dev-1/summary
+```
+
+Resposta:
+
+```json
+{
+  "developer_id": "dev-1",
+  "total_commits": 25,
+  "total_pull_requests": 8,
+  "avg_review_time_minutes": 45,
+  "events_processed": 10,
+  "review_time_sum": 90,
+  "review_time_count": 2,
+  "last_activity": "2026-04-15T10:30:00Z"
+}
+```
+
+### Todos os eventos de um desenvolvedor
+
+```bash
+curl http://localhost:8080/metrics/dev-1
+```
+
+Resposta:
+
+```json
+[
+  {
+    "event_id": "uuid-v4",
+    "developer_id": "dev-1",
+    "metric_type": "commits",
+    "value": 15,
+    "repository": "org/api",
+    "timestamp": "2026-04-15T10:30:00Z",
+    "processed_at": "2026-04-15T10:30:05Z",
+    "processor_id": "processor-worker-0"
+  }
+]
 ```
 
 ---
 
-## Summary
+## Verificar DLQs
 
-```txt
-http://localhost:8080/metrics/dev-1/summary
+Para verificar se há mensagens nas Dead Letter Queues:
+
+```bash
+# Verificar raw-events-dlq
+docker exec developer-metrics-pipeline-localstack-1 awslocal sqs get-queue-attributes \
+  --queue-url http://localhost:4566/000000000000/raw-events-dlq \
+  --attribute-names ApproximateNumberOfMessages
+
+# Verificar processed-events-dlq
+docker exec developer-metrics-pipeline-localstack-1 awslocal sqs get-queue-attributes \
+  --queue-url http://localhost:4566/000000000000/processed-events-dlq \
+  --attribute-names ApproximateNumberOfMessages
+
+# Ler mensagens da DLQ (sem remover)
+docker exec developer-metrics-pipeline-localstack-1 awslocal sqs receive-message \
+  --queue-url http://localhost:4566/000000000000/raw-events-dlq
 ```
 
 ---
 
-# Fluxo Completo
+## Testes Unitários
 
-1. Evento enviado para `raw-events`
-2. Processor consome evento
-3. Evento é validado
-4. Evento enriquecido é enviado para `processed-events`
-5. Aggregator consome evento
-6. Dados são agregados
-7. Informações persistidas no DynamoDB
-8. API REST disponibiliza os dados
+```bash
+# Testes do Processor (validação de eventos)
+cd services/processor && go test ./cmd/ -v
 
----
-
-# Conceitos Demonstrados
-
-- Arquitetura orientada a eventos
-- Processamento assíncrono
-- Comunicação entre microsserviços
-- Integração com AWS
-- Uso de SQS
-- Uso de DynamoDB
-- Dead Letter Queue (DLQ)
-- Docker Compose
-- LocalStack
-- APIs REST
-- Agregação incremental
+# Testes do Aggregator (lógica de agregação)
+cd services/aggregator && go test ./cmd/ -v
+```
 
 ---
 
-# Melhorias Futuras
+## Funcionalidades Implementadas
 
-Possíveis melhorias futuras:
-
-- Worker pool configurável
-- Retry com backoff exponencial
-- Logs estruturados em JSON
-- OpenTelemetry
-- Testes unitários completos
-- Swagger/OpenAPI
-- Persistência completa do summary no DynamoDB
-- CI/CD pipeline
-- Makefile
-- Idempotência persistente
-
----
-
-# Decisões Técnicas
-
-O projeto foi dividido em dois serviços independentes para simular uma arquitetura distribuída baseada em eventos.
-
-A comunicação foi realizada exclusivamente via SQS para garantir desacoplamento entre os serviços.
-
-O LocalStack foi utilizado para simular os serviços AWS localmente sem necessidade de conta AWS real.
-
-O Docker Compose foi utilizado para simplificar a execução do ambiente completo com um único comando.
+- **Worker pool** configurável via `WORKER_COUNT`
+- **Validação UUID** para event_id
+- **Retry com backoff exponencial** para envio ao SQS
+- **Logs estruturados em JSON** com correlation por event_id
+- **Graceful shutdown** com drenagem de workers
+- **Idempotência** real via verificação no DynamoDB
+- **Persistência do summary** na tabela `developer_summary`
+- **Endpoints dinâmicos** (`/metrics/:developer_id` e `/metrics/:developer_id/summary`)
+- **Média real** de review_time_minutes (não apenas último valor)
+- **Campo last_activity** no summary
+- **Health check** com verificação de SQS e DynamoDB
+- **Dead Letter Queues** com RedrivePolicy (maxReceiveCount: 3)
+- **Multi-stage Docker builds** para imagens menores
+- **Testes unitários** para validação e agregação
 
 ---
 
-# Autor
+## Autor
 
-Projeto desenvolvido para o case técnico de Analista de Engenharia Pleno — AI Coding Tools.
+Artur Tsouza

@@ -7,15 +7,33 @@ services:
       - SERVICES=sqs,dynamodb
     volumes:
       - ./infra/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   processor:
     build: ./services/processor
     depends_on:
-      - localstack
+      localstack:
+        condition: service_healthy
+    environment:
+      - SQS_ENDPOINT=http://localstack:4566
+      - RAW_QUEUE_URL=http://localstack:4566/000000000000/raw-events
+      - PROCESSED_QUEUE_URL=http://localstack:4566/000000000000/processed-events
+      - WORKER_COUNT=5
+      - AWS_REGION=us-east-1
 
   aggregator:
     build: ./services/aggregator
     ports:
       - "8080:8080"
     depends_on:
-      - localstack
+      localstack:
+        condition: service_healthy
+    environment:
+      - SQS_ENDPOINT=http://localstack:4566
+      - DYNAMODB_ENDPOINT=http://localstack:4566
+      - PROCESSED_QUEUE_URL=http://localstack:4566/000000000000/processed-events
+      - AWS_REGION=us-east-1
