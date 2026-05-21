@@ -1,0 +1,21 @@
+services:
+  localstack:
+    image: localstack/localstack:3.0
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs,dynamodb
+    volumes:
+      - ./infra/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh
+
+  processor:
+    build: ./services/processor
+    depends_on:
+      - localstack
+
+  aggregator:
+    build: ./services/aggregator
+    ports:
+      - "8080:8080"
+    depends_on:
+      - localstack
