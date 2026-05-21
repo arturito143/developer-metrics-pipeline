@@ -81,6 +81,8 @@ func main() {
 
 	log.WithField("worker_count", workerCount).Info("processor started")
 
+	waitForQueue(ctx, client, rawQueueURL)
+
 	msgCh := make(chan sqstypes.Message, workerCount*2)
 	var wg sync.WaitGroup
 
@@ -183,6 +185,25 @@ func sendWithRetry(ctx context.Context, client *sqs.Client, queueURL, body strin
 		}
 	}
 	return nil
+}
+
+func waitForQueue(ctx context.Context, client *sqs.Client, queueURL string) {
+	for {
+		_, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+			QueueUrl:       aws.String(queueURL),
+			AttributeNames: []sqstypes.QueueAttributeName{sqstypes.QueueAttributeNameAll},
+		})
+		if err == nil {
+			log.WithField("queue", queueURL).Info("queue is ready")
+			return
+		}
+		log.WithField("queue", queueURL).Info("waiting for queue to be created...")
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 func deleteMsg(ctx context.Context, client *sqs.Client, queueURL string, receiptHandle *string) {
